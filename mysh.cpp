@@ -32,54 +32,65 @@ class Mysh {
         std::string keyword;
         Mysh *mysh;
 
-        virtual void Execute() {
-            std::cout << "ight " << std::endl;
-        };
+        virtual void Execute(std::vector<std::string> &parameters) = 0;
+
     protected:
         Command() {
-            std::cout << "base called\n";
+            mysh = nullptr;
         }
+
+        virtual ~Command() = default;
     };
 
-    class HistoryCommand : public Command {
+    class History : public Command {
     public:
-        HistoryCommand(Mysh *mysh) {
+        explicit History(Mysh *mysh) {
             keyword = "history";
             this->mysh = mysh;
         }
 
-        void Execute() {
+        void Execute(std::vector<std::string> &parameters) override {
+            for (const auto &parameter : parameters) {
+                if (parameter == "-c") {
+                    mysh->ClearInputHistory();
+                }
+            }
+
             mysh->PrintInputHistory();
         }
     };
 
-    class ExitCommand : public Command {
+    class Exit : public Command {
     public:
-        ExitCommand(Mysh *mysh) {
+        explicit Exit(Mysh *mysh) {
             keyword = "byebye";
             this->mysh = mysh;
         }
 
-        void Execute() {
-            // FIXME fail for now
-            exit(EXIT_FAILURE);
+        void Execute(std::vector<std::string> &parameters) override {
+            // TODO free commands and history before exit
+            exit(EXIT_SUCCESS);
         }
+    };
+
+    class MoveToDirectory : Command {
+
     };
 
 public:
     Mysh() {
-        commands = new std::vector<Command *>();
-    }
+        this->InitializeCommands();
+    };
 
     void InitializeCommands() {
-        commands->push_back(new HistoryCommand(this));
-        commands->push_back(new ExitCommand(this));
+        commands.push_back(new History(this));
+        commands.push_back(new Exit(this));
     }
 
     void PrintCommands() const {
         fflush(stdout);
-        std::cout << "There are: " << this->commands->size() << " commands available" << std::endl;
-        for (auto a : *this->commands) {
+        std::cout << "There are: " << this->commands.size() << " commands available" << std::endl;
+        for (auto a : this->commands) {
             std::cout << a->keyword << std::endl;
         }
     }
@@ -89,52 +100,68 @@ public:
         bool keepGoing = true;
 
         while (keepGoing) {
-            std::cout << "# ";
+            printOctothorpe();
 
-            ProcessInput();
-
-//            keepGoing =
+            keepGoing = ProcessInput();
         }
     }
 
-    void ProcessInput() {
+    static void printOctothorpe() { std::cout << "# "; }
+
+    bool ProcessInput() {
         std::string inputLine;
         std::getline(std::cin, inputLine);
 
-        char *inputHistoryEntry = new char;
-        std::strcpy(inputHistoryEntry, inputLine.c_str());
+        UpdateInputHistory(inputLine);
 
-        inputHistory.push_back(inputHistoryEntry);
-
-        // TODO refactor - too many lines
         std::vector<std::string> tokens = TokenizeCommand(inputLine);
         std::string firstToken = tokens[0];
 
+        Command *currentCommand = DetermineCommand(firstToken);
+
+        if (currentCommand == nullptr) {
+            std::cerr << firstToken << ": command not found" << std::endl;
+            return true;
+        }
+
+        auto parameters = std::vector<std::string>(tokens.begin() + 1, tokens.end());
+
+        currentCommand->Execute(parameters);
+
+        return true;
+    }
+
+    Command *DetermineCommand(const std::string &firstToken) const {
         Command *currentCommand = nullptr;
-        for (auto command : *commands) {
-            if (firstToken.compare(command->keyword) == 0) {
+        for (auto command : commands) {
+            if (firstToken == command->keyword) {
                 currentCommand = command;
             }
         }
-
-        if (currentCommand == nullptr) {
-            std::cerr << "Command was not found" << std::endl;
-            return;
-        }
-
-        // FIXME get parameters
-
-        currentCommand->Execute();
+        return currentCommand;
     }
 
-    std::vector<std::string> TokenizeCommand(const std::string &line) {
+    static std::vector<std::string> TokenizeCommand(const std::string &line) {
         auto const regex = std::regex{R"(\s+)"};
 
-        const std::vector<std::string> tokens = std::vector<std::string>(
+        const auto tokens = std::vector<std::string>(
                 std::sregex_token_iterator{begin(line), end(line), regex, -1},
                 std::sregex_token_iterator{});
 
         return tokens;
+    }
+
+    void ClearInputHistory() {
+        for (auto &i : inputHistory) {
+            delete i;
+        }
+        inputHistory.clear();
+    }
+
+    void UpdateInputHistory(std::string &inputLine) {
+        char *inputHistoryEntry = new char;
+        std::strcpy(inputHistoryEntry, inputLine.c_str());
+        this->inputHistory.push_back(inputHistoryEntry);
     }
 
     void PrintInputHistory() {
@@ -144,14 +171,14 @@ public:
     }
 
 private:
-    std::vector<Command *> *commands;
+    std::vector<Command *> commands;
     std::vector<char *> inputHistory;
+    char * currentDirectory;
 };
 
 
 int main() {
     Mysh *mysh = new Mysh();
-    mysh->InitializeCommands();
     mysh->PrintCommands();
     mysh->Start();
 }
