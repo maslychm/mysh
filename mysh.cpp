@@ -32,14 +32,14 @@ class Mysh {
         std::string keyword;
         Mysh *mysh;
 
-        virtual void Execute(std::vector<std::string> &parameters) = 0;
+        virtual int Execute(std::vector<std::string> &parameters) = 0;
+
+        virtual ~Command() = default;
 
     protected:
         Command() {
             mysh = nullptr;
         }
-
-        virtual ~Command() = default;
     };
 
     class History : public Command {
@@ -49,14 +49,16 @@ class Mysh {
             this->mysh = mysh;
         }
 
-        void Execute(std::vector<std::string> &parameters) override {
+        int Execute(std::vector<std::string> &parameters) override {
             for (const auto &parameter : parameters) {
                 if (parameter == "-c") {
                     mysh->ClearInputHistory();
+                    break;
                 }
             }
 
             mysh->PrintInputHistory();
+            return 0;
         }
     };
 
@@ -67,9 +69,8 @@ class Mysh {
             this->mysh = mysh;
         }
 
-        void Execute(std::vector<std::string> &parameters) override {
-            // TODO free commands and history before exit
-            exit(EXIT_SUCCESS);
+        int Execute(std::vector<std::string> &parameters) override {
+            return 1;
         }
     };
 
@@ -126,7 +127,11 @@ public:
 
         auto parameters = std::vector<std::string>(tokens.begin() + 1, tokens.end());
 
-        currentCommand->Execute(parameters);
+        int returnCode = currentCommand->Execute(parameters);
+
+        if (returnCode == 1) {
+            return false;
+        }
 
         return true;
     }
@@ -158,6 +163,13 @@ public:
         inputHistory.clear();
     }
 
+    void DeleteCommands() {
+        for (auto &i : commands) {
+            delete i;
+        }
+        commands.clear();
+    }
+
     void UpdateInputHistory(std::string &inputLine) {
         char *inputHistoryEntry = new char;
         std::strcpy(inputHistoryEntry, inputLine.c_str());
@@ -173,7 +185,7 @@ public:
 private:
     std::vector<Command *> commands;
     std::vector<char *> inputHistory;
-    char * currentDirectory;
+    char *currentDirectory;
 };
 
 
@@ -181,4 +193,8 @@ int main() {
     Mysh *mysh = new Mysh();
     mysh->PrintCommands();
     mysh->Start();
+
+    mysh->DeleteCommands();
+    mysh->ClearInputHistory();
+    delete mysh;
 }
