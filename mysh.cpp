@@ -1,11 +1,8 @@
-#include <iostream>
-#include <string>
 #include <vector>
+#include <iostream>
+#include <cstring>
 #include <regex>
-#include <istream>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 /**
  * Commands:
@@ -26,193 +23,385 @@
  *      commands before, but print PID and returns to prompt
  * - exterminate PID
  *      kill() -> success/failure
- * - 
+ * -
  */
 
-// FIXME issues right now with movetodir command
-// some cases of .. concatenation are handled
-// consider using regex
-
-// ex:
-// /home/mykola/projects/OS/homework3/mysh/.. # movetodir ..
-// home/mykola/projects/OS/homework3/mysh # movetodir ../mysh
-// /home/mykola/projects/OS/homework3 #
-
-// This is supposed to stay in the same directory after the ../mysh call
-
-// More issure with using the "go back" operator, but do we even need to implement it? :upside_down:?
+enum ErrorCode {
+    no_error = 0,
+    command_does_not_exist = 1,
+    incorrect_parameters = 2,
+    dir_does_not_exist = 3,
+    request_exit = 10,
+};
 
 class Mysh {
     class Command {
     public:
         std::string keyword;
+        std::vector<std::string> validParameters;
+        bool allowCustomParameters;
         Mysh *mysh;
 
-        virtual int Execute(std::vector<std::string> &parameters) = 0;
+        bool InputParametersAreValid(std::vector<std::string> &iPs) {
+            if (allowCustomParameters)
+                return true;
 
-        virtual ~Command() = default;
+            if (iPs.size() > this->validParameters.size())
+                return false;
+
+            for (const auto &ip : iPs) {
+                if (std::find(std::begin(validParameters), std::end(validParameters), ip) ==
+                    std::end(validParameters)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        virtual ErrorCode Execute(std::vector<std::string> &inputParameters) = 0;
 
     protected:
         Command() {
             mysh = nullptr;
+            allowCustomParameters = false;
         }
     };
 
-    class History : public Command {
-    public:
-        explicit History(Mysh *mysh) {
-            keyword = "history";
-            this->mysh = mysh;
-        }
-
-        ~History() override {
-            mysh->FreeInputHistory();
-        }
-
-        int Execute(std::vector<std::string> &parameters) override {
-            if (parameters.size() > 1) {
-                std::cout << "history: too many arguments\n";
-                return 0;
+    class HistoryHandler {
+        class History : public Command {
+        public:
+            explicit History(Mysh *mysh, HistoryHandler *inputHistory) {
+                keyword = "history";
+                validParameters = {"-c"};
+                this->allowCustomParameters = false;
+                this->mysh = mysh;
+                this->inputHistory = inputHistory;
             }
 
-            for (const auto &parameter : parameters) {
-                if (parameter == "-c") {
-                    mysh->FreeInputHistory();
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+
+                for (const auto &parameter : inputParameters) {
+                    if (parameter == "-c")
+                        inputHistory->ClearInputHistoryLines();
+                }
+
+                inputHistory->PrintInputHistoryLines();
+                return no_error;
+            }
+
+        private:
+            HistoryHandler *inputHistory;
+        };
+
+    public:
+        explicit HistoryHandler(Mysh *mysh) {
+            this->mysh = mysh;
+            mysh->commands->push_back(new History(mysh, this));
+        }
+
+        ~HistoryHandler() {
+            this->ClearInputHistoryLines();
+        }
+
+        void UpdateInputHistory(std::string &inputLine) {
+            char *inputHistoryEntry = new char;
+            std::strcpy(inputHistoryEntry, inputLine.c_str());
+            this->inputHistory.push_back(inputHistoryEntry);
+        }
+
+    private:
+        Mysh *mysh;
+        std::vector<char *> inputHistory;
+
+        void ClearInputHistoryLines() {
+            for (auto line : inputHistory)
+                delete line;
+
+            inputHistory.clear();
+        }
+
+        void PrintInputHistoryLines() {
+            for (auto line : inputHistory)
+                std::cout << "  " << line << std::endl;
+        }
+    };
+
+    class ExitHandler {
+        class Exit : public Command {
+        public:
+            explicit Exit(Mysh *mysh, ExitHandler *exitHandler) {
+                this->keyword = "byebye";
+                this->validParameters = {};
+                this->allowCustomParameters = false;
+                this->mysh = mysh;
+                this->exitHandler = exitHandler;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                // FIXME ask if to interrupt background jobs
+
+                // End background jobs
+
+                // return non 0 for exit
+                return request_exit;
+            }
+
+        private:
+            ExitHandler *exitHandler;
+        };
+
+    public:
+        explicit ExitHandler(Mysh *mysh) {
+            this->mysh = mysh;
+            mysh->commands->push_back(new Exit(mysh, this));
+        }
+
+        ~ExitHandler() = default;
+
+    private:
+        Mysh *mysh;
+    };
+
+    class DirectoryHandler {
+        class WhereAmI : public Command {
+        public:
+            explicit WhereAmI(Mysh *mysh, DirectoryHandler *directoryHandler) {
+                this->keyword = "whereami";
+                this->validParameters = {};
+                this->allowCustomParameters = false;
+                this->mysh = mysh;
+                this->directoryHandler = directoryHandler;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                directoryHandler->PrintCurrentDirectory();
+                return no_error;
+            }
+
+        private:
+            DirectoryHandler *directoryHandler;
+        };
+
+        class MoveToDirectory : public Command {
+        public:
+            explicit MoveToDirectory(Mysh *mysh, DirectoryHandler *directoryHandler) {
+                this->keyword = "movetodir";
+                this->validParameters = {};
+                this->allowCustomParameters = true;
+                this->mysh = mysh;
+                this->directoryHandler = directoryHandler;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                const char *pathname;
+
+                if (inputParameters.size() == 0) {
+                    pathname = "/";
+                } else {
+                    pathname = inputParameters[0].c_str();
+                }
+                ErrorCode ec = directoryHandler->ChangeCurrentDirectory(pathname);
+
+                return ec;
+            }
+
+        private:
+            DirectoryHandler *directoryHandler;
+        };
+
+    public:
+        explicit DirectoryHandler(Mysh *mysh) {
+            this->mysh = mysh;
+            BUFFERSIZE = 1024;
+            currentDirectory = (char *) malloc(sizeof(char) * BUFFERSIZE);
+
+            if (!getcwd(currentDirectory, BUFFERSIZE)) {
+                perror("Error getting current directory");
+            }
+
+            mysh->commands->push_back(new WhereAmI(mysh, this));
+            mysh->commands->push_back(new MoveToDirectory(mysh, this));
+        }
+
+        ~DirectoryHandler() {
+            delete[] currentDirectory;
+        }
+
+        std::string GetCurrentDirectoryString() {
+            return std::string(this->currentDirectory);
+        }
+
+    private:
+        Mysh *mysh;
+        int BUFFERSIZE;
+        char *currentDirectory;
+
+        void PrintCurrentDirectory() const {
+            std::cout << currentDirectory << std::endl;
+        }
+
+        ErrorCode ChangeCurrentDirectory(const char *newPath) {
+            char *pathToCheck = new char[BUFFERSIZE];
+
+            BuildPathToCheck(newPath, pathToCheck);
+
+            if (chdir(pathToCheck) == 0) {
+                delete[] currentDirectory;
+                currentDirectory = strdup(pathToCheck);
+            } else {
+                return dir_does_not_exist;
+            }
+
+            delete[] pathToCheck;
+            return no_error;
+        }
+
+        void BuildPathToCheck(const char *newPath, char *pathToCheck) const {
+            if (newPath[0] == '/') {
+                strcpy(pathToCheck, newPath);
+            } else if (newPath[0] == '.' and newPath[1] == '.') {
+                strcpy(pathToCheck, currentDirectory);
+                GetOneUpPath(pathToCheck);
+            } else {
+                strcpy(pathToCheck, currentDirectory);
+                if (pathToCheck[strlen(pathToCheck) - 1] != '/') {
+                    strcat(pathToCheck, "/");
+                }
+                strcat(pathToCheck, newPath);
+            }
+        }
+
+        void GetOneUpPath(char *pathToCheck) const {
+            if (CheckIfRootPath())
+                return;
+
+            // Comments as a way to excuse bad code
+            // Count how many slashes we have to know how close to root we are
+            // if just one away, go to root
+            int slashCount = 0;
+            for (long unsigned int i = 0; i < strlen(currentDirectory) - 1; i++) {
+                if (currentDirectory[i] == '/') {
+                    slashCount++;
+                }
+            }
+            if (slashCount == 1) {
+                strcpy(pathToCheck, "/");
+                return;
+            }
+
+            // to move up one directory, null terminate after last slash
+            for (auto i = strlen(pathToCheck) - 1; i >= 0; i--) {
+                if (pathToCheck[i] == '/') {
+                    pathToCheck[i] = '\0';
                     break;
                 }
-                return 0;
             }
+        }
 
-            mysh->PrintInputHistory();
-            return 0;
+        bool CheckIfRootPath() const {
+            return strlen(currentDirectory) == 1 and currentDirectory[0] == '/';
         }
     };
 
-    class Exit : public Command {
+    class ErrorCodeHandler {
     public:
-        explicit Exit(Mysh *mysh) {
-            keyword = "byebye";
-            this->mysh = mysh;
-        }
-
-        int Execute(std::vector<std::string> &parameters) override {
-            return 1;
-        }
-    };
-
-    class MoveToDirectory : public Command {
-    public:
-        explicit MoveToDirectory(Mysh *mysh) {
-            keyword = "movetodir";
-            this->mysh = mysh;
-        }
-
-        int Execute(std::vector<std::string> &parameters) override {
-            if (parameters.size() == 0 or parameters.size() > 1) {
-                std::cout << "movetodir: incorrect number or arguments\n";
-                return 0;
+        static void HandleErrorCode(ErrorCode ec) {
+            switch (ec) {
+                case no_error:
+                    return;
+                case command_does_not_exist:
+                    std::cout << "command not found" << std::endl;
+                    break;
+                case incorrect_parameters:
+                    std::cout << "incorrect parameters" << std::endl;
+                    break;
+                case dir_does_not_exist:
+                    std::cout << "directory does not exist" << std::endl;
+                    break;
+                default:
+                    break;
             }
-
-            const char* pathname = parameters[0].c_str();
-
-            mysh->ChangeCurrentDirectory(pathname);
-
-            return 0;
-        }
-    };
-
-    class WhereAmI : public Command {
-    public:
-        explicit WhereAmI(Mysh *mysh) {
-            keyword = "whereami";
-            this->mysh = mysh;
-        }
-
-        int Execute(std::vector<std::string> &parameters) override {
-            mysh->PrintCurrentDirectory();
-            return 0;
         }
     };
 
 public:
     Mysh() {
-        this->InitializeCommands();
-        this->InitializeCurrentDirectory();
-    };
+        this->commands = new std::vector<Command *>();
+
+        historyHandler = new HistoryHandler(this);
+        exitHandler = new ExitHandler(this);
+        directoryHandler = new DirectoryHandler(this);
+
+        errorCodeHandler = new ErrorCodeHandler();
+    }
 
     ~Mysh() {
-        this->FreeCommands();
-        this->FreeInputHistory();
-        this->FreeCurrentDirectory();
+        delete historyHandler;
+        delete exitHandler;
+        delete directoryHandler;
+
+        delete errorCodeHandler;
+
+        delete commands;
     }
 
     void Start() {
         bool keepGoing = true;
         while (keepGoing) {
             printPrompt();
-            keepGoing = ProcessInput();
+            ErrorCode ec = ProcessInput();
+
+            this->errorCodeHandler->HandleErrorCode(ec);
+
+            if (ec == 10) {
+                keepGoing = false;
+                std::cout << "ret code: " << ec << std::endl;
+            }
         }
     }
 
 private:
-    std::vector<Command *> commands;
-    std::vector<char *> inputHistory;
-    char *currentDirectory;
+    HistoryHandler *historyHandler;
+    ExitHandler *exitHandler;
+    DirectoryHandler *directoryHandler;
+    // other handlers will go here
 
-    void UpdateInputHistory(std::string &inputLine) {
-        char *inputHistoryEntry = new char;
-        std::strcpy(inputHistoryEntry, inputLine.c_str());
-        this->inputHistory.push_back(inputHistoryEntry);
-    }
+    ErrorCodeHandler *errorCodeHandler;
 
-    void PrintInputHistory() {
-        for (auto entry : this->inputHistory) {
-            std::cout << entry << std::endl;
-        }
-    }
+    std::vector<Command *> *commands;
 
     void printPrompt() {
-        std::cout << this->currentDirectory << " # ";
+        std::cout << this->directoryHandler->GetCurrentDirectoryString() << "# ";
     }
 
-    bool ProcessInput() {
+    ErrorCode ProcessInput() {
         std::string inputLine;
         std::getline(std::cin, inputLine);
 
-        UpdateInputHistory(inputLine);
+        historyHandler->UpdateInputHistory(inputLine);
 
-        std::vector<std::string> tokens = TokenizeCommand(inputLine);
-        std::string firstToken = tokens[0];
+        std::vector<std::string> tokens = TokenizeInput(inputLine);
 
-        Command *currentCommand = DetermineCommand(firstToken);
+        if (tokens[0].length() == 0) {
+            return no_error;
+        }
+
+        Command *currentCommand = DetermineCommand(tokens[0]);
 
         if (currentCommand == nullptr) {
-            std::cerr << firstToken << ": command not found" << std::endl;
-            return true;
+            return command_does_not_exist;
         }
 
         auto parameters = std::vector<std::string>(tokens.begin() + 1, tokens.end());
 
-        int returnCode = currentCommand->Execute(parameters);
-
-        if (returnCode == 1) {
-            return false;
+        if (!currentCommand->InputParametersAreValid(parameters)) {
+            return incorrect_parameters;
         }
 
-        return true;
+        return currentCommand->Execute(parameters);
     }
 
-    Command *DetermineCommand(const std::string &firstToken) const {
-        Command *currentCommand = nullptr;
-        for (auto command : commands) {
-            if (firstToken == command->keyword) {
-                currentCommand = command;
-            }
-        }
-        return currentCommand;
-    }
-
-    static std::vector<std::string> TokenizeCommand(const std::string &line) {
+    static std::vector<std::string> TokenizeInput(const std::string &line) {
         auto const regex = std::regex{R"(\s+)"};
 
         const auto tokens = std::vector<std::string>(
@@ -222,135 +411,28 @@ private:
         return tokens;
     }
 
-    void InitializeCommands() {
-        commands.push_back(new History(this));
-        commands.push_back(new Exit(this));
-        commands.push_back(new WhereAmI(this));
-        commands.push_back(new MoveToDirectory(this));
-    }
-
-    void InitializeCurrentDirectory() {
-        int BUFFERSIZE = 1024;
-
-        currentDirectory = new char[BUFFERSIZE];
-
-        if (!getcwd(currentDirectory, BUFFERSIZE))
-            perror("ERROR");
-    }
-
-    void FreeInputHistory() {
-        for (auto &i : inputHistory) {
-            delete i;
-        }
-        inputHistory.clear();
-    }
-
-    void FreeCurrentDirectory() {
-        delete[] currentDirectory;
-    }
-
-    void FreeCommands() {
-        for (auto &i : commands) {
-            delete i;
-        }
-        commands.clear();
-    }
-
-    void PrintCommands() const {
-        std::cout << "There are: " << this->commands.size() << " commands available" << std::endl;
-        for (auto a : this->commands) {
-            std::cout << a->keyword << std::endl;
-        }
-    }
-
-    void ChangeCurrentDirectory(const char* newPath) const {
-        char *pathToCheck = new char[1024];
-
-        BuildPathToCheck(newPath, pathToCheck);
-
-        if (chdir(pathToCheck) == 0){
-            strcpy(currentDirectory, pathToCheck);
-        } else {
-            std::cout << pathToCheck << std::endl;
-            std::cerr << "directory doesn't exist\n";
-        }
-
-        delete[] pathToCheck;
-    }
-
-    void BuildPathToCheck(const char *newPath, char* pathToCheck) const {
-        if (newPath[0] == '/') {
-            strcpy(pathToCheck, newPath);
-        } else if (newPath[0] == '.' and newPath[1] == '.') {
-            strcpy(pathToCheck, currentDirectory);
-            GetOneUpPath(pathToCheck);
-        } else {
-            strcpy(pathToCheck, currentDirectory);
-            if (pathToCheck[strlen(pathToCheck) - 1] != '/'){
-                strcat(pathToCheck, "/");
-            }
-            strcat(pathToCheck, newPath);
-        }
-    }
-
-    void GetOneUpPath(char* pathToCheck) const {
-        if (CheckIfRootPath())
-            return;
-
-        // Comments as a way to excuse bad code
-        // Count how many slashes we have to know how close to root we are
-        // if just one away, go to root
-        int slashCount = 0;
-        for (long unsigned int i = 0; i < strlen(currentDirectory) - 1; i++) {
-            if (currentDirectory[i] == '/') {
-                slashCount++;
+    Command *DetermineCommand(const std::string &firstToken) const {
+        Command *currentCommand = nullptr;
+        for (auto command : *commands) {
+            if (firstToken == command->keyword) {
+                currentCommand = command;
             }
         }
-        if (slashCount == 1) {
-            strcpy(pathToCheck, "/");
-            return;
-        }
-
-        // to move up one directory, null terminate after last slash
-        for (int i = strlen(pathToCheck) - 1; i >= 0; i--) {
-            if (pathToCheck[i] == '/') {
-                pathToCheck[i] = '\0';
-                break;
-            }
-        }
-    }
-
-    bool CheckIfRootPath() const {
-        return strlen(currentDirectory) == 1 and currentDirectory[0] == '/';
-    }
-
-    bool CheckIfDirectoryExists(const char* pathname) const {
-//        // check if exists
-//        struct stat info;
-//
-//        if (stat(pathname, &info) != 0){
-//            std::cout << "Cannot access " << pathname << std::endl;
-//        } else if (info.st_mode & S_IFDIR) {
-//            return true;
-//        } else if (info.st_mode & S_IFREG) {
-//            std::cout << "is a file\n";
-//        } else {
-//            std::cout << "is not a directory\n";
-//        }
-//
-        return false;
-    }
-
-    void PrintCurrentDirectory() const {
-        std::cout << currentDirectory << std::endl;
+        return currentCommand;
     }
 };
 
 
-int main() {
+int TestMysh() {
     Mysh *mysh = new Mysh();
 
     mysh->Start();
 
     delete mysh;
+
+    return 0;
+}
+
+int main() {
+    TestMysh();
 }
