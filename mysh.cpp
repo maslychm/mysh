@@ -106,25 +106,20 @@ class Mysh {
             this->ClearInputHistoryLines();
         }
 
-        void UpdateInputHistory(std::string &inputLine) {
-            char *inputHistoryEntry = new char[inputLine.length() + 1];
-            std::strcpy(inputHistoryEntry, inputLine.c_str());
-            this->inputHistory.push_back(inputHistoryEntry);
+        void UpdateInputHistory(const std::string &inputLine) {
+            this->inputHistory.push_back(inputLine);
         }
 
     private:
         Mysh *mysh;
-        std::vector<char *> inputHistory;
+        std::vector<std::string> inputHistory;
 
         void ClearInputHistoryLines() {
-            for (auto line : inputHistory)
-                delete line;
-
             inputHistory.clear();
         }
 
         void PrintInputHistoryLines() {
-            for (auto line : inputHistory)
+            for (const auto &line : inputHistory)
                 std::cout << "  " << line << std::endl;
         }
     };
@@ -327,8 +322,8 @@ class Mysh {
                 ErrorCode ec = Mysh::ProcessHandler::ForkExecWait(arguments);
 
                 for (long unsigned i = 0; i < inputParameters.size() + 1; i++)
-                    delete [] arguments[i];
-                delete [] arguments;
+                    delete[] arguments[i];
+                delete[] arguments;
 
                 return ec;
             }
@@ -380,7 +375,7 @@ class Mysh {
         }
 
         static char **InputParametersToCharArguments(std::vector<std::string> &inputParameters) {
-            char** arguments = nullptr;
+            char **arguments = nullptr;
             int iPLen = inputParameters.size();
 
             arguments = new char *[iPLen + 1];
