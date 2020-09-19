@@ -140,12 +140,33 @@ class Mysh {
             }
 
             ErrorCode Execute(std::vector<std::string> &inputParameters) override {
-                // FIXME ask if to interrupt background jobs
+                int running = mysh->processHandler->CountRunningProcesses();
 
-                // End background jobs
+                if (running > 0) {
+                    std::cout << "There are " << running << " active jobs" << std::endl;
 
-                // return non 0 for exit
-                return request_exit;
+                    std::cout << "terminate before exit? (y/n)";
+                    std::string input;
+                    std::cin >> input;
+                    // A bit ugly, but I want to avoid making KillAll() public,
+                    // so all this following code is to run it
+                    if (input == "y" or input == "yes") {
+                        input = "exterminateall";
+                        std::vector<std::string> vs = {};
+                        for (auto command : *mysh->commands) {
+                            if (command->keyword == input) {
+                                command->Execute(vs);
+                                break;
+                            }
+                        }
+                        return request_exit;
+                    }
+                    else if (input == "n" or input == "no") {
+                        return request_exit;
+                    }
+                }
+
+                return no_error;
             }
 
         private:
@@ -330,6 +351,7 @@ class Mysh {
 
                 return ec;
             }
+
         private:
             ProcessHandler *processHandler;
         };
@@ -358,7 +380,7 @@ class Mysh {
                 ErrorCode ec = Mysh::ProcessHandler::KillPID(pid);
 
                 if (ec == no_error) {
-                    if(processHandler->RemoveBackgroundPID(pid))
+                    if (processHandler->RemoveBackgroundPID(pid))
                         std::cout << "successfully killed " << pid << std::endl;
                     else {
                         std::cout << pid << " was already dead" << std::endl;
@@ -367,6 +389,7 @@ class Mysh {
 
                 return ec;
             }
+
         private:
             ProcessHandler *processHandler;
         };
@@ -435,6 +458,10 @@ class Mysh {
             mysh->commands->push_back(new ExterminatePID(mysh, this));
             mysh->commands->push_back(new ExterminateAll(mysh, this));
             mysh->commands->push_back(new Repeat(mysh, this));
+        }
+
+        int CountRunningProcesses() {
+            return backgroundPIDs.size();
         }
 
     private:
