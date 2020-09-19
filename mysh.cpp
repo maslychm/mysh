@@ -3,6 +3,7 @@
 #include <cstring>
 #include <regex>
 #include <unistd.h>
+#include <wait.h>
 
 /**
  * Commands:
@@ -31,6 +32,7 @@ enum ErrorCode {
     command_does_not_exist = 1,
     incorrect_parameters = 2,
     dir_does_not_exist = 3,
+    child_process_error = 4,
     request_exit = 10,
 };
 
@@ -38,9 +40,6 @@ class Mysh {
     class Command {
     public:
         std::string keyword;
-        std::vector<std::string> validParameters;
-        bool allowCustomParameters;
-        Mysh *mysh;
 
         bool InputParametersAreValid(std::vector<std::string> &iPs) {
             if (allowCustomParameters)
@@ -61,6 +60,10 @@ class Mysh {
         virtual ErrorCode Execute(std::vector<std::string> &inputParameters) = 0;
 
     protected:
+        Mysh *mysh;
+        std::vector<std::string> validParameters;
+        bool allowCustomParameters;
+
         Command() {
             mysh = nullptr;
             allowCustomParameters = false;
@@ -104,7 +107,7 @@ class Mysh {
         }
 
         void UpdateInputHistory(std::string &inputLine) {
-            char *inputHistoryEntry = new char;
+            char *inputHistoryEntry = new char[inputLine.length() + 1];
             std::strcpy(inputHistoryEntry, inputLine.c_str());
             this->inputHistory.push_back(inputHistoryEntry);
         }
@@ -195,7 +198,7 @@ class Mysh {
             ErrorCode Execute(std::vector<std::string> &inputParameters) override {
                 const char *pathname;
 
-                if (inputParameters.size() == 0) {
+                if (inputParameters.empty()) {
                     pathname = "/";
                 } else {
                     pathname = inputParameters[0].c_str();
@@ -303,6 +306,93 @@ class Mysh {
         }
     };
 
+    class ProcessHandler {
+        class Run : public Command {
+        public:
+            explicit Run(Mysh *mysh, ProcessHandler *ph) {
+                this->mysh = mysh;
+                this->processHandler = ph;
+                this->keyword = "run";
+                this->validParameters = {};
+                this->allowCustomParameters = true;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+
+                if (inputParameters.empty())
+                    return incorrect_parameters;
+
+                char **arguments = InputParametersToCharArguments(inputParameters);
+
+                ErrorCode ec = Mysh::ProcessHandler::ForkExecWait(arguments);
+
+                for (long unsigned i = 0; i < inputParameters.size() + 1; i++)
+                    delete [] arguments[i];
+                delete [] arguments;
+
+                return ec;
+            }
+
+        private:
+            ProcessHandler *processHandler;
+        };
+
+    public:
+        explicit ProcessHandler(Mysh *mysh) {
+            this->mysh = mysh;
+
+            mysh->commands->push_back(new Run(mysh, this));
+        }
+
+    private:
+        Mysh *mysh;
+
+        static ErrorCode ForkExecWait(char **arguments) {
+            pid_t c_pid, w;
+            int wait_status;
+
+            c_pid = fork();
+
+            if (c_pid < 0) {
+                perror("forking failed\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (c_pid == 0) {
+                printf("child (pid:%ld)\n", (long) getpid());
+
+                int execError = execvp(arguments[0], arguments);
+
+                if (execError == -1) {
+                    std::cerr << "could not execute " << arguments[0] << std::endl;
+                    exit(1);
+                }
+            } else {
+                w = waitpid(c_pid, &wait_status, 0);
+
+                if (w == -1) {
+                    perror("waitpid");
+                    return child_process_error;
+                }
+            }
+
+            return no_error;
+        }
+
+        static char **InputParametersToCharArguments(std::vector<std::string> &inputParameters) {
+            char** arguments = nullptr;
+            int iPLen = inputParameters.size();
+
+            arguments = new char *[iPLen + 1];
+            for (auto i = 0; i < iPLen; i++) {
+                arguments[i] = strdup(inputParameters[i].c_str());
+            }
+            arguments[iPLen] = nullptr;
+
+            return arguments;
+        }
+    };
+
     class ErrorCodeHandler {
     public:
         static void HandleErrorCode(ErrorCode ec) {
@@ -318,6 +408,9 @@ class Mysh {
                 case dir_does_not_exist:
                     std::cout << "directory does not exist" << std::endl;
                     break;
+                case child_process_error:
+                    std::cout << "child process error" << std::endl;
+                    break;
                 default:
                     break;
             }
@@ -331,6 +424,7 @@ public:
         historyHandler = new HistoryHandler(this);
         exitHandler = new ExitHandler(this);
         directoryHandler = new DirectoryHandler(this);
+        processHandler = new ProcessHandler(this);
 
         errorCodeHandler = new ErrorCodeHandler();
     }
@@ -351,7 +445,7 @@ public:
             printPrompt();
             ErrorCode ec = ProcessInput();
 
-            this->errorCodeHandler->HandleErrorCode(ec);
+            Mysh::ErrorCodeHandler::HandleErrorCode(ec);
 
             if (ec == 10) {
                 keepGoing = false;
@@ -364,7 +458,7 @@ private:
     HistoryHandler *historyHandler;
     ExitHandler *exitHandler;
     DirectoryHandler *directoryHandler;
-    // other handlers will go here
+    ProcessHandler *processHandler;
 
     ErrorCodeHandler *errorCodeHandler;
 
@@ -404,7 +498,7 @@ private:
     static std::vector<std::string> TokenizeInput(const std::string &line) {
         auto const regex = std::regex{R"(\s+)"};
 
-        const auto tokens = std::vector<std::string>(
+        auto tokens = std::vector<std::string>(
                 std::sregex_token_iterator{begin(line), end(line), regex, -1},
                 std::sregex_token_iterator{});
 
