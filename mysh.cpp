@@ -302,9 +302,9 @@ class Mysh {
     };
 
     class ProcessHandler {
-        class Run : public Command {
+        class RunForeground : public Command {
         public:
-            explicit Run(Mysh *mysh, ProcessHandler *ph) {
+            explicit RunForeground(Mysh *mysh, ProcessHandler *ph) {
                 this->mysh = mysh;
                 this->processHandler = ph;
                 this->keyword = "run";
@@ -336,7 +336,7 @@ class Mysh {
         explicit ProcessHandler(Mysh *mysh) {
             this->mysh = mysh;
 
-            mysh->commands->push_back(new Run(mysh, this));
+            mysh->commands->push_back(new RunForeground(mysh, this));
         }
 
     private:
