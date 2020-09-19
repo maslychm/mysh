@@ -26,6 +26,8 @@
  *      kill() -> success/failure
  * - exterminateall
  *      print each murdered pid
+ * - repeat n command
+ *      repeat command n times
  */
 
 enum ErrorCode {
@@ -346,7 +348,13 @@ class Mysh {
                 if (inputParameters.empty())
                     return incorrect_parameters;
 
-                auto pid = (pid_t) std::stoi(inputParameters[0]);
+                pid_t pid;
+                try {
+                    pid = (pid_t) std::stoi(inputParameters[0]);
+                } catch (std::exception &err) {
+                    return incorrect_parameters;
+                }
+
                 ErrorCode ec = Mysh::ProcessHandler::KillPID(pid);
 
                 if (ec == no_error) {
@@ -400,7 +408,12 @@ class Mysh {
             ErrorCode Execute(std::vector<std::string> &inputParameters) override {
                 ErrorCode errorCode = no_error;
 
-                auto n = (int) std::stoi(inputParameters[0]);
+                int n;
+                try {
+                    n = (int) std::stoi(inputParameters[0]);
+                } catch (std::exception &err) {
+                    return incorrect_parameters;
+                }
 
                 inputParameters.erase(inputParameters.begin());
                 char **arguments = InputParametersToCharArguments(inputParameters);
