@@ -33,6 +33,7 @@ enum ErrorCode {
     incorrect_parameters = 2,
     dir_does_not_exist = 3,
     child_process_error = 4,
+    could_not_kill = 5,
     request_exit = 10,
 };
 
@@ -332,15 +333,80 @@ class Mysh {
             ProcessHandler *processHandler;
         };
 
+        class RunBackground : public Command {
+        public:
+            explicit RunBackground(Mysh *mysh, ProcessHandler *ph) {
+                this->mysh = mysh;
+                this->processHandler = ph;
+                this->keyword = "background";
+                this->validParameters = {};
+                this->allowCustomParameters = true;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                if (inputParameters.empty())
+                    return incorrect_parameters;
+
+                char **arguments = InputParametersToCharArguments(inputParameters);
+
+                pid_t pid;
+                ErrorCode ec = Mysh::ProcessHandler::ForkExecBackground(arguments, &pid);
+
+                if (pid > 0)
+                    processHandler->AddBackgroundPID(pid);
+
+                for (long unsigned i = 0; i < inputParameters.size() + 1; i++)
+                    delete[] arguments[i];
+                delete[] arguments;
+
+                return ec;
+            }
+        private:
+            ProcessHandler *processHandler;
+        };
+
+        class ExterminatePID : public Command {
+        public:
+            explicit ExterminatePID(Mysh *mysh, ProcessHandler *ph) {
+                this->mysh = mysh;
+                this->processHandler = ph;
+                this->keyword = "exterminate";
+                this->validParameters = {};
+                this->allowCustomParameters = true;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                if (inputParameters.empty())
+                    return incorrect_parameters;
+
+                pid_t pid = std::stoi(inputParameters[0]);
+                ErrorCode ec = Mysh::ProcessHandler::KillPID(pid);
+
+                if (ec == no_error) {
+                    if(processHandler->RemoveBackgroundPID(pid))
+                        std::cout << "successfully killed " << pid << std::endl;
+                    else {
+                        std::cout << pid << " was already dead" << std::endl;
+                    }
+                }
+
+                return ec;
+            }
+        private:
+            ProcessHandler *processHandler;
+        };
     public:
         explicit ProcessHandler(Mysh *mysh) {
             this->mysh = mysh;
 
             mysh->commands->push_back(new RunForeground(mysh, this));
+            mysh->commands->push_back(new RunBackground(mysh, this));
+            mysh->commands->push_back(new ExterminatePID(mysh, this));
         }
 
     private:
         Mysh *mysh;
+        std::vector<pid_t> backgroundPIDs;
 
         static ErrorCode ForkExecWait(char **arguments) {
             pid_t c_pid, w;
@@ -354,8 +420,6 @@ class Mysh {
             }
 
             if (c_pid == 0) {
-                printf("child (pid:%ld)\n", (long) getpid());
-
                 int execError = execvp(arguments[0], arguments);
 
                 if (execError == -1) {
@@ -372,6 +436,77 @@ class Mysh {
             }
 
             return no_error;
+        }
+
+        static ErrorCode ForkExecBackground(char **arguments, pid_t *pid) {
+            pid_t c_pid;
+
+            c_pid = fork();
+
+            if (c_pid < 0) {
+                perror("forking failed\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (c_pid == 0) {
+                printf("child (pid:%ld)\n", (long) getpid());
+
+                // Set new process group to stop capturing input from caller shell
+                setpgid(0, 0);
+
+                int execError = execvp(arguments[0], arguments);
+
+                if (execError == -1) {
+                    std::cerr << "could not execute " << arguments[0] << std::endl;
+                    exit(1);
+                }
+            } else {
+                *pid = c_pid;
+            }
+
+            return no_error;
+        }
+
+        static ErrorCode KillPID(pid_t pid) {
+            int kill_err = kill(pid, SIGINT);
+
+            if (kill_err == 0)
+                return no_error;
+
+            kill_err = kill(pid, SIGTERM);
+
+            if (kill_err == 0)
+                return no_error;
+
+            kill_err = kill(pid, SIGKILL);
+
+            if (kill_err == 0)
+                return no_error;
+
+            if (kill_err == -1)
+                return could_not_kill;
+
+            return no_error;
+        }
+
+        void AddBackgroundPID(pid_t pid) {
+            backgroundPIDs.push_back(pid);
+        }
+
+        bool RemoveBackgroundPID(pid_t pid) {
+            for (long unsigned i = 0; i < backgroundPIDs.size(); i++) {
+                if (pid == backgroundPIDs[i]) {
+                    backgroundPIDs.erase(backgroundPIDs.begin() + i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void ListBackgroundPIDs() {
+            for (auto pid : backgroundPIDs) {
+                std::cout << "bg:" << pid << std::endl;
+            }
         }
 
         static char **InputParametersToCharArguments(std::vector<std::string> &inputParameters) {
@@ -406,6 +541,8 @@ class Mysh {
                 case child_process_error:
                     std::cout << "child process error" << std::endl;
                     break;
+                case could_not_kill:
+                    std::cout << "could not kill specified pid" << std::endl;
                 default:
                     break;
             }
