@@ -346,7 +346,7 @@ class Mysh {
                 if (inputParameters.empty())
                     return incorrect_parameters;
 
-                pid_t pid = std::stoi(inputParameters[0]);
+                auto pid = (pid_t) std::stoi(inputParameters[0]);
                 ErrorCode ec = Mysh::ProcessHandler::KillPID(pid);
 
                 if (ec == no_error) {
@@ -383,6 +383,36 @@ class Mysh {
         private:
             ProcessHandler *processHandler;
         };
+
+        /**
+         * Extra Credit: Repeat command N times
+         */
+        class Repeat : public Command {
+        public:
+            explicit Repeat(Mysh *mysh, ProcessHandler *ph) {
+                this->mysh = mysh;
+                this->processHandler = ph;
+                this->keyword = "repeat";
+                this->validParameters = {};
+                this->allowCustomParameters = true;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                ErrorCode errorCode = no_error;
+
+                auto n = (int) std::stoi(inputParameters[0]);
+
+                inputParameters.erase(inputParameters.begin());
+                char **arguments = InputParametersToCharArguments(inputParameters);
+                errorCode = processHandler->RepeatCommand(arguments, n);
+
+                return errorCode;
+            }
+
+        private:
+            ProcessHandler *processHandler;
+        };
+
     public:
         explicit ProcessHandler(Mysh *mysh) {
             this->mysh = mysh;
@@ -390,6 +420,8 @@ class Mysh {
             mysh->commands->push_back(new RunForeground(mysh, this));
             mysh->commands->push_back(new RunBackground(mysh, this));
             mysh->commands->push_back(new ExterminatePID(mysh, this));
+            mysh->commands->push_back(new ExterminateAll(mysh, this));
+            mysh->commands->push_back(new Repeat(mysh, this));
         }
 
     private:
@@ -484,6 +516,19 @@ class Mysh {
             for (auto pid : backgroundPIDs) {
                 std::cout << pid << " ";
                 errorCode = KillPID(pid);
+            }
+            std::cout << std::endl;
+            return errorCode;
+        }
+
+        ErrorCode RepeatCommand(char **arguments, int n) {
+            ErrorCode errorCode = no_error;
+            pid_t pid;
+            std::cout << "PIDs: ";
+            for (int i = 0; i < n; i++) {
+                errorCode = ForkExecBackground(arguments, &pid);
+                backgroundPIDs.push_back(pid);
+                std::cout << pid << ", ";
             }
             std::cout << std::endl;
             return errorCode;
