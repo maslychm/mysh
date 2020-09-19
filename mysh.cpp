@@ -24,7 +24,8 @@
  *      commands before, but print PID and returns to prompt
  * - exterminate PID
  *      kill() -> success/failure
- * -
+ * - exterminateall
+ *      print each murdered pid
  */
 
 enum ErrorCode {
@@ -361,6 +362,27 @@ class Mysh {
         private:
             ProcessHandler *processHandler;
         };
+
+        /**
+         * Extra Credit: Murder all background processes
+         */
+        class ExterminateAll : public Command {
+        public:
+            explicit ExterminateAll(Mysh *mysh, ProcessHandler *ph) {
+                this->mysh = mysh;
+                this->processHandler = ph;
+                this->keyword = "exterminateall";
+                this->validParameters = {};
+                this->allowCustomParameters = false;
+            }
+
+            ErrorCode Execute(std::vector<std::string> &inputParameters) override {
+                return processHandler->KillAllPIDs();
+            }
+
+        private:
+            ProcessHandler *processHandler;
+        };
     public:
         explicit ProcessHandler(Mysh *mysh) {
             this->mysh = mysh;
@@ -453,6 +475,18 @@ class Mysh {
                 return could_not_kill;
 
             return no_error;
+        }
+
+        ErrorCode KillAllPIDs() {
+            ErrorCode errorCode = no_error;
+
+            std::cout << "Murdering " << backgroundPIDs.size() << " processes: ";
+            for (auto pid : backgroundPIDs) {
+                std::cout << pid << " ";
+                errorCode = KillPID(pid);
+            }
+            std::cout << std::endl;
+            return errorCode;
         }
 
         void AddBackgroundPID(pid_t pid) {
