@@ -192,14 +192,12 @@ class Mysh {
             }
 
             ErrorCode Execute(std::vector<std::string> &inputParameters) override {
-                const char *pathname;
+                if (inputParameters.empty())
+                    return incorrect_parameters;
 
-                if (inputParameters.empty()) {
-                    pathname = "/";
-                } else {
-                    pathname = inputParameters[0].c_str();
-                }
-                ErrorCode ec = directoryHandler->ChangeCurrentDirectory(pathname);
+                std::string inputPath = inputParameters[0];
+
+                ErrorCode ec = directoryHandler->ChangeCurrentDirectory(inputPath);
 
                 return ec;
             }
@@ -239,66 +237,34 @@ class Mysh {
             std::cout << currentDirectory << std::endl;
         }
 
-        ErrorCode ChangeCurrentDirectory(const char *newPath) {
-            char *pathToCheck = new char[BUFFERSIZE];
+        ErrorCode ChangeCurrentDirectory(std::string &inputPath) {
+            ErrorCode errorCode = no_error;
 
-            BuildPathToCheck(newPath, pathToCheck);
-
-            if (chdir(pathToCheck) == 0) {
-                delete[] currentDirectory;
-                currentDirectory = strdup(pathToCheck);
+            char *pathname = new char[BUFFERSIZE];
+            BuildPathToCheck(pathname, inputPath);
+            if (chdir(pathname) == 0) {
+                if (!getcwd(pathname, BUFFERSIZE)) {
+                    perror("Error getting current directory");
+                }
+                std::strcpy(currentDirectory, pathname);
             } else {
-                return dir_does_not_exist;
+                errorCode = dir_does_not_exist;
             }
 
-            delete[] pathToCheck;
-            return no_error;
+            delete[] pathname;
+            return errorCode;
         }
 
-        void BuildPathToCheck(const char *newPath, char *pathToCheck) const {
-            if (newPath[0] == '/') {
-                strcpy(pathToCheck, newPath);
-            } else if (newPath[0] == '.' and newPath[1] == '.') {
-                strcpy(pathToCheck, currentDirectory);
-                GetOneUpPath(pathToCheck);
+        void BuildPathToCheck(char *pathname, const std::string &inputPath) const {
+            if (inputPath[0] == '/') {
+                strcpy(pathname, inputPath.c_str());
             } else {
-                strcpy(pathToCheck, currentDirectory);
-                if (pathToCheck[strlen(pathToCheck) - 1] != '/') {
-                    strcat(pathToCheck, "/");
+                strcpy(pathname, currentDirectory);
+                if (pathname[strlen(pathname) - 1] != '/') {
+                    strcat(pathname, "/");
                 }
-                strcat(pathToCheck, newPath);
+                strcat(pathname, inputPath.c_str());
             }
-        }
-
-        void GetOneUpPath(char *pathToCheck) const {
-            if (CheckIfRootPath())
-                return;
-
-            // Comments as a way to excuse bad code
-            // Count how many slashes we have to know how close to root we are
-            // if just one away, go to root
-            int slashCount = 0;
-            for (long unsigned int i = 0; i < strlen(currentDirectory) - 1; i++) {
-                if (currentDirectory[i] == '/') {
-                    slashCount++;
-                }
-            }
-            if (slashCount == 1) {
-                strcpy(pathToCheck, "/");
-                return;
-            }
-
-            // to move up one directory, null terminate after last slash
-            for (auto i = strlen(pathToCheck) - 1; i >= 0; i--) {
-                if (pathToCheck[i] == '/') {
-                    pathToCheck[i] = '\0';
-                    break;
-                }
-            }
-        }
-
-        bool CheckIfRootPath() const {
-            return strlen(currentDirectory) == 1 and currentDirectory[0] == '/';
         }
     };
 
