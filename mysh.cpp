@@ -344,8 +344,10 @@ class Mysh {
                 pid_t pid;
                 ErrorCode ec = Mysh::ProcessHandler::ForkExecBackground(arguments, &pid);
 
-                if (pid > 0)
+                if (pid > 0) {
+                    printf("child (pid:%ld)\n", (long) pid);
                     processHandler->AddBackgroundPID(pid);
+                }
 
                 for (long unsigned i = 0; i < inputParameters.size() + 1; i++)
                     delete[] arguments[i];
@@ -511,8 +513,6 @@ class Mysh {
             }
 
             if (c_pid == 0) {
-                printf("child (pid:%ld)\n", (long) getpid());
-
                 // Set new process group to stop capturing input from caller shell
                 setpgid(0, 0);
 
@@ -525,7 +525,6 @@ class Mysh {
             } else {
                 *pid = c_pid;
             }
-            std::cout << "*******" << *pid << std::endl;
 
             return no_error;
         }
@@ -555,8 +554,6 @@ class Mysh {
         ErrorCode KillAllPIDs() {
             ErrorCode errorCode = no_error;
 
-            ListBackgroundPIDs();
-
             std::cout << "Murdering " << backgroundPIDs.size() << " processes: ";
             for (auto pid : backgroundPIDs) {
                 std::cout << pid << " ";
@@ -572,13 +569,15 @@ class Mysh {
         ErrorCode RepeatCommand(char **arguments, int n) {
             ErrorCode errorCode = no_error;
             pid_t pid;
-            std::cout << "PIDs: ";
+            std::string ret = "PIDs: ";
+            fflush(stdout);
             for (int i = 0; i < n; i++) {
                 errorCode = ForkExecBackground(arguments, &pid);
-                backgroundPIDs.push_back(pid);
-                std::cout << pid << ", ";
+                AddBackgroundPID(pid);
+                ret += std::to_string(pid);
+                ret += ", ";
             }
-            std::cout << std::endl;
+            std::cout << ret << std::endl;
             return errorCode;
         }
 
