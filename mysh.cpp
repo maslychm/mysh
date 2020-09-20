@@ -267,7 +267,8 @@ class Mysh {
             ErrorCode errorCode = no_error;
 
             char *pathname = new char[BUFFERSIZE];
-            BuildPathToCheck(pathname, inputPath);
+            strcpy(pathname, inputPath.c_str());
+
             if (chdir(pathname) == 0) {
                 if (!getcwd(pathname, BUFFERSIZE)) {
                     perror("Error getting current directory");
@@ -279,18 +280,6 @@ class Mysh {
 
             delete[] pathname;
             return errorCode;
-        }
-
-        void BuildPathToCheck(char *pathname, const std::string &inputPath) const {
-            if (inputPath[0] == '/') {
-                strcpy(pathname, inputPath.c_str());
-            } else {
-                strcpy(pathname, currentDirectory);
-                if (pathname[strlen(pathname) - 1] != '/') {
-                    strcat(pathname, "/");
-                }
-                strcat(pathname, inputPath.c_str());
-            }
         }
     };
 
