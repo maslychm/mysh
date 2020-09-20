@@ -236,7 +236,7 @@ class Mysh {
         explicit DirectoryHandler(Mysh *mysh) {
             this->mysh = mysh;
             BUFFERSIZE = 1024;
-            currentDirectory = (char *) malloc(sizeof(char) * BUFFERSIZE);
+            currentDirectory = new char[BUFFERSIZE];
 
             if (!getcwd(currentDirectory, BUFFERSIZE)) {
                 perror("Error getting current directory");
