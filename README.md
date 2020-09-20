@@ -1,11 +1,11 @@
 ## mysh - my shell for Operating Systems course
 
-### Build 
+#### Build 
 ```
-make all
+make
 ```
 
-### Run
+#### Run
 ```
 ./mysh
 ```
@@ -30,5 +30,10 @@ make all
  * `byebye` - terminate the shell
  
  ### Information
- Written as a homework for COP4600. I like the topics covered in this class, 
- and this assignment gave an opportunity to do a good job at something more
+ Written as a homework for COP4600. I spent a little too much time organizing
+ the system architecture and planning for extensibility before realized that 
+ at this rate the code will be three thousand lines long. So I went for a more
+ limited, but stable implementation.
+ 
+ I utilized something that resembles 
+ the Command pattern from [This amazing Game design patterns book](https://gameprogrammingpatterns.com/command.html).
