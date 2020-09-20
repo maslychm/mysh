@@ -164,9 +164,11 @@ class Mysh {
                     else if (input == "n" or input == "no") {
                         return request_exit;
                     }
+
+                    return no_error;
                 }
 
-                return no_error;
+                return request_exit;
             }
 
         private:
@@ -523,6 +525,7 @@ class Mysh {
             } else {
                 *pid = c_pid;
             }
+            std::cout << "*******" << *pid << std::endl;
 
             return no_error;
         }
@@ -552,11 +555,16 @@ class Mysh {
         ErrorCode KillAllPIDs() {
             ErrorCode errorCode = no_error;
 
+            ListBackgroundPIDs();
+
             std::cout << "Murdering " << backgroundPIDs.size() << " processes: ";
             for (auto pid : backgroundPIDs) {
                 std::cout << pid << " ";
                 errorCode = KillPID(pid);
             }
+
+            this->ClearBackgroundPIDs();
+
             std::cout << std::endl;
             return errorCode;
         }
@@ -585,7 +593,13 @@ class Mysh {
                     return true;
                 }
             }
+
+            ClearBackgroundPIDs();
             return false;
+        }
+
+        void ClearBackgroundPIDs() {
+            backgroundPIDs.clear();
         }
 
         void ListBackgroundPIDs() {

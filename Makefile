@@ -1,4 +1,4 @@
-all: clean mysh
+all: mysh
 
 clean:
 	rm -rf mysh
