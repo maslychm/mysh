@@ -1,5 +1,7 @@
 ## mysh - my shell for Operating Systems course
 
+![repeat 100 xterm -bg red](https://github.com/maslychm/mysh/blob/master/repo_resources/repeat_100_xterm_-bg_red.png)
+
 #### Build 
 ```
 make
@@ -37,3 +39,5 @@ make
  
  I utilized something that resembles 
  the Command pattern from [This amazing Game design patterns book](https://gameprogrammingpatterns.com/command.html).
+ 
+ Tested with g++ 9.3.0 on Ubuntu 20

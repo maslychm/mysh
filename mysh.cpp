@@ -6,6 +6,10 @@
 #include <wait.h>
 
 /**
+ * Written by Mykola Maslych for COP4600 with Dr. Ladislau Boloni in Fall 2020
+ */
+
+/**
  * Commands:
  * - movetodir
  *      change directory. internal variable. if doesn't exist -> error message
